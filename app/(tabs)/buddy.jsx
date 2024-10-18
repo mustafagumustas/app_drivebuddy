@@ -3,14 +3,11 @@ import React, { useRef, useMemo, useState, useEffect } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { View, StyleSheet } from 'react-native'; // React Native View kullanımı
 import fragmentShader from '../fragmentShader';
-import { Sphere } from '@react-three/drei';
 import vertexShader from '../vertexShader';
-import Constants from 'expo-constants';
 import { MathUtils } from "three";
 import { Audio } from 'expo-av';
 import * as THREE from 'three';
 import axios from 'axios';
-
 const AnimatedBlob = () => {
   const mesh = useRef();
   const blobShaderMaterial = useMemo(() => new THREE.ShaderMaterial({
@@ -51,30 +48,27 @@ const Buddy = () => {
   const [responseMessage, setResponseMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [firstRun, setFirstRun] = useState(true);
-  const [recording, setRecording] = useState(null);
+  const [audio, setAudio] = useState(null);
+  const serverUrl = `http://172.23.12.111:8000`;
 
-  const serverIp = Constants.expoConfig?.extra?.debuggerHost?.split(':').shift() || 'localhost';
-  const serverUrl = `http://${serverIp}:8000`;
-
-  const configureAudioForIOS = async () => {
-    await Audio.setAudioModeAsync({
-      allowsRecordingIOS: false,
-      interruptionModeIOS: Audio.INTERRUPTION_MODE_IOS_DO_NOT_MIX,
-      playsInSilentModeIOS: true,
-      shouldDuckAndroid: true,
-      interruptionModeAndroid: Audio.INTERRUPTION_MODE_ANDROID_DO_NOT_MIX,
-      playThroughEarpieceAndroid: false,
-    });
-  };
-  async function playAudioFromBuffer(base64Audio) {
-    const sound = new Audio.Sound();
-
+  async function fetchAndPlayAudio(text) {
     try {
-      // Load and play audio directly from the base64 data URI
-      await sound.loadAsync(
-        { uri: `data:audio/wav;base64,${base64Audio}` },
-        { shouldPlay: true }
-      );
+      const response = await fetch(`${serverUrl}/api/accounts/generate_speech/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ text })
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch audio");
+      }
+
+      const blob = await response.blob();
+      const uri = URL.createObjectURL(blob);
+      const { sound } = await Audio.Sound.createAsync({ uri });
+      await sound.playAsync();
     } catch (error) {
       console.error("Error playing audio:", error);
     }
@@ -82,19 +76,21 @@ const Buddy = () => {
 
   const handleMicPress = async () => {
     setLoading(true);
-    console.log("hey");
     try {
       const response = await axios.post(`${serverUrl}/api/accounts/start_conversation/`, {
         first_run: firstRun,
       });
-      console.log("Response received:", response.data);
-      setResponseMessage(response.data.message);
+      const responseMessage = response.data.text;
+      console.log("working....");
+      fetchAndPlayAudio(responseMessage);
+      setResponseMessage(responseMessage);
       setConversationStarted(true);
       setFirstRun(false);
     } catch (error) {
       console.error("Error starting conversation:", error);
     } finally {
       setLoading(false);
+
     }
   };
 
